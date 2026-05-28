@@ -1,12 +1,19 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <string.h>
+
+#if __has_include("secrets.h")
 #include "secrets.h"
+#elif __has_include("secrets.example.h")
+#include "secrets.example.h"
+#else
+#include "secrets.examples.h"
+#endif
 
 struct Bed {
   int valvePin;
   const int* sensors;
-  int sensorCount;
+  size_t sensorCount;
 };
 
 constexpr int bed1Sensors[] = {36};
@@ -56,10 +63,16 @@ void buildTopics();
 void buildSensorTopic(size_t bedIndex, size_t sensorIndex, char* out, size_t outLen);
 bool parseValveCommand(const byte* payload, unsigned int length, bool& on);
 bool bedHasSensors(size_t bedIndex);
+void publishValveDiscovery(size_t bedIndex);
+void publishSensorDiscovery(size_t bedIndex);
+void publishDiscovery();
+void publishAllValveStates();
+void publishBeds();
+void publishAll();
 
 void buildClientId() {
-  uint32_t chipId = static_cast<uint32_t>(ESP.getEfuseMac() & 0xFFFFFF);
-  snprintf(mqttClientId, sizeof(mqttClientId), "esp32-garden-%06lX", static_cast<unsigned long>(chipId));
+  unsigned long long mac = static_cast<unsigned long long>(ESP.getEfuseMac());
+  snprintf(mqttClientId, sizeof(mqttClientId), "esp32-garden-%012llX", mac);
 }
 
 bool ensureWiFiConnected() {
@@ -172,8 +185,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.println(topic);
 }
 
-void publishValveDiscovery(int bed) {
-  size_t bedIndex = static_cast<size_t>(bed);
+void publishValveDiscovery(size_t bedIndex) {
   unsigned int bedNumber = static_cast<unsigned int>(bedIndex + 1);
   char topic[TOPIC_BUF_LEN] = {0};
   char payload[PAYLOAD_BUF_LEN] = {0};
@@ -213,8 +225,7 @@ void publishValveDiscovery(int bed) {
   }
 }
 
-void publishSensorDiscovery(int bed) {
-  size_t bedIndex = static_cast<size_t>(bed);
+void publishSensorDiscovery(size_t bedIndex) {
   if (!bedHasSensors(bedIndex)) {
     return;
   }
@@ -222,13 +233,13 @@ void publishSensorDiscovery(int bed) {
   unsigned int bedNumber = static_cast<unsigned int>(bedIndex + 1);
   const Bed& bedDef = beds[bedIndex];
 
-  for (int sensor = 0; sensor < bedDef.sensorCount; sensor++) {
+  for (size_t sensor = 0; sensor < bedDef.sensorCount; sensor++) {
     unsigned int sensorNumber = static_cast<unsigned int>(sensor + 1);
     char stateTopic[TOPIC_BUF_LEN] = {0};
     char topic[TOPIC_BUF_LEN] = {0};
     char payload[PAYLOAD_BUF_LEN] = {0};
 
-    buildSensorTopic(bedIndex, static_cast<size_t>(sensor), stateTopic, sizeof(stateTopic));
+    buildSensorTopic(bedIndex, sensor, stateTopic, sizeof(stateTopic));
     snprintf(topic, sizeof(topic), "%s/sensor/%s_bed_%u_sensor_%u_moisture/config", DISCOVERY_PREFIX, DEVICE_ID, bedNumber, sensorNumber);
     snprintf(payload, sizeof(payload),
              "{\"name\":\"Garden Bed %u Sensor %u Moisture\","
@@ -266,8 +277,8 @@ void publishSensorDiscovery(int bed) {
 
 void publishDiscovery() {
   for (size_t i = 0; i < NUM_BEDS; i++) {
-    publishValveDiscovery(static_cast<int>(i));
-    publishSensorDiscovery(static_cast<int>(i));
+    publishValveDiscovery(i);
+    publishSensorDiscovery(i);
   }
 }
 
@@ -292,12 +303,12 @@ void publishBeds() {
     }
 
     const Bed& bed = beds[i];
-    for (int sensor = 0; sensor < bed.sensorCount; sensor++) {
+    for (size_t sensor = 0; sensor < bed.sensorCount; sensor++) {
       int moisture = readSensorPin(bed.sensors[sensor]);
 
       char topic[TOPIC_BUF_LEN] = {0};
       char payload[16] = {0};
-      buildSensorTopic(i, static_cast<size_t>(sensor), topic, sizeof(topic));
+      buildSensorTopic(i, sensor, topic, sizeof(topic));
       snprintf(payload, sizeof(payload), "%d", moisture);
 
       bool ok = mqtt.publish(topic, payload, true);
@@ -305,7 +316,7 @@ void publishBeds() {
         Serial.print("Moisture publish failed for bed ");
         Serial.print(static_cast<unsigned int>(i + 1));
         Serial.print(" sensor ");
-        Serial.println(sensor + 1);
+        Serial.println(static_cast<unsigned int>(sensor + 1));
       }
     }
   }
@@ -372,6 +383,7 @@ void setup() {
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   lastWiFiAttemptMs = millis();
+  lastMQTTAttemptMs = millis() - MQTT_RETRY_MS;
   Serial.println("Controller booted");
 
   mqtt.setBufferSize(2048);
@@ -408,4 +420,6 @@ void loop() {
     lastPublish = millis();
     publishBeds();
   }
+
+  delay(1);
 }
