@@ -12,18 +12,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v2
+        uses: arduino/setup-arduino-cli@v2.0.0
 
       - name: Install ESP32 core and libraries
         run: |
           arduino-cli core update-index \
             --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-          arduino-cli core install esp32:esp32 \
+          arduino-cli core install esp32:esp32@2.0.17 \
             --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
-          arduino-cli lib install "PubSubClient"
+          arduino-cli lib install "PubSubClient@2.8"
 
       - name: Compile sketch
         run: |

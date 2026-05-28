@@ -21,11 +21,13 @@ Bed beds[] = {
   {19, bed4Sensors, 1}
 };
 
-constexpr int NUM_BEDS = 4;
+constexpr size_t NUM_BEDS = sizeof(beds) / sizeof(beds[0]);
 constexpr unsigned long WIFI_RETRY_MS = 10000;
 constexpr unsigned long MQTT_RETRY_MS = 5000;
 constexpr unsigned long SENSOR_PUBLISH_MS = 10000;
 constexpr unsigned long COMMAND_DEBOUNCE_MS = 150;
+constexpr size_t TOPIC_BUF_LEN = 96;
+constexpr size_t PAYLOAD_BUF_LEN = 1024;
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -43,13 +45,17 @@ unsigned long lastWiFiAttemptMs = 0;
 unsigned long lastMQTTAttemptMs = 0;
 bool wifiWasConnected = false;
 char mqttClientId[32] = {0};
+char valveSetTopics[NUM_BEDS][TOPIC_BUF_LEN] = {{0}};
+char valveStateTopics[NUM_BEDS][TOPIC_BUF_LEN] = {{0}};
 
-void setValve(int bedIndex, bool on);
+void setValve(size_t bedIndex, bool on);
 bool ensureWiFiConnected();
 void ensureMQTTConnected();
 void buildClientId();
+void buildTopics();
+void buildSensorTopic(size_t bedIndex, size_t sensorIndex, char* out, size_t outLen);
 bool parseValveCommand(const byte* payload, unsigned int length, bool& on);
-bool bedHasSensors(int bedIndex);
+bool bedHasSensors(size_t bedIndex);
 
 void buildClientId() {
   uint32_t chipId = static_cast<uint32_t>(ESP.getEfuseMac() & 0xFFFFFF);
@@ -80,27 +86,22 @@ int readSensorPin(int pin) {
   return total / 10;
 }
 
-int readBedMoisture(int bedIndex) {
-  if (bedIndex < 0 || bedIndex >= NUM_BEDS) {
-    return -1;
+void buildTopics() {
+  for (size_t i = 0; i < NUM_BEDS; i++) {
+    unsigned int bedNumber = static_cast<unsigned int>(i + 1);
+    snprintf(valveSetTopics[i], sizeof(valveSetTopics[i]), "%s%u/valve/set", BASE_TOPIC, bedNumber);
+    snprintf(valveStateTopics[i], sizeof(valveStateTopics[i]), "%s%u/valve/state", BASE_TOPIC, bedNumber);
   }
-
-  Bed& bed = beds[bedIndex];
-  if (bed.sensorCount <= 0 || bed.sensors == nullptr) {
-    return -1;
-  }
-
-  int total = 0;
-
-  for (int i = 0; i < bed.sensorCount; i++) {
-    total += readSensorPin(bed.sensors[i]);
-  }
-
-  return total / bed.sensorCount;
 }
 
-bool bedHasSensors(int bedIndex) {
-  if (bedIndex < 0 || bedIndex >= NUM_BEDS) {
+void buildSensorTopic(size_t bedIndex, size_t sensorIndex, char* out, size_t outLen) {
+  unsigned int bedNumber = static_cast<unsigned int>(bedIndex + 1);
+  unsigned int sensorNumber = static_cast<unsigned int>(sensorIndex + 1);
+  snprintf(out, outLen, "%s%u/sensor/%u/moisture", BASE_TOPIC, bedNumber, sensorNumber);
+}
+
+bool bedHasSensors(size_t bedIndex) {
+  if (bedIndex >= NUM_BEDS) {
     return false;
   }
 
@@ -108,23 +109,22 @@ bool bedHasSensors(int bedIndex) {
   return bed.sensorCount > 0 && bed.sensors != nullptr;
 }
 
-void setValve(int bedIndex, bool on) {
-  if (bedIndex < 0 || bedIndex >= NUM_BEDS) {
+void setValve(size_t bedIndex, bool on) {
+  if (bedIndex >= NUM_BEDS) {
     return;
   }
 
   digitalWrite(beds[bedIndex].valvePin, on ? LOW : HIGH);
   valveStates[bedIndex] = on;
 
-  String topic = String(BASE_TOPIC) + String(bedIndex + 1) + "/valve/state";
-  bool ok = mqtt.publish(topic.c_str(), on ? "ON" : "OFF", true);
+  bool ok = mqtt.publish(valveStateTopics[bedIndex], on ? "ON" : "OFF", true);
   if (!ok) {
     Serial.print("Valve state publish failed for bed ");
-    Serial.println(bedIndex + 1);
+    Serial.println(static_cast<unsigned int>(bedIndex + 1));
   }
 
   Serial.print("Valve bed ");
-  Serial.print(bedIndex + 1);
+  Serial.print(static_cast<unsigned int>(bedIndex + 1));
   Serial.print(" -> ");
   Serial.println(on ? "ON" : "OFF");
 }
@@ -153,14 +153,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  for (int i = 0; i < NUM_BEDS; i++) {
-    String expected = String(BASE_TOPIC) + String(i + 1) + "/valve/set";
-
-    if (strcmp(topic, expected.c_str()) == 0) {
+  for (size_t i = 0; i < NUM_BEDS; i++) {
+    if (strcmp(topic, valveSetTopics[i]) == 0) {
       unsigned long now = millis();
       if (now - lastValveCommandMs[i] < COMMAND_DEBOUNCE_MS) {
         Serial.print("Ignored rapid repeat command for bed ");
-        Serial.println(i + 1);
+        Serial.println(static_cast<unsigned int>(i + 1));
         return;
       }
 
@@ -175,81 +173,110 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 void publishValveDiscovery(int bed) {
-  String topic = String(DISCOVERY_PREFIX) + "/switch/garden_bed_" + String(bed + 1) + "/config";
+  size_t bedIndex = static_cast<size_t>(bed);
+  unsigned int bedNumber = static_cast<unsigned int>(bedIndex + 1);
+  char topic[TOPIC_BUF_LEN] = {0};
+  char payload[PAYLOAD_BUF_LEN] = {0};
 
-  String payload =
-  "{"
-    "\"name\":\"Garden Bed " + String(bed + 1) + " Valve\","
-    "\"unique_id\":\"garden_bed_" + String(bed + 1) + "_valve\","
-    "\"command_topic\":\"garden/bed/" + String(bed + 1) + "/valve/set\","
-    "\"state_topic\":\"garden/bed/" + String(bed + 1) + "/valve/state\","
-    "\"payload_on\":\"ON\","
-    "\"payload_off\":\"OFF\","
-    "\"state_on\":\"ON\","
-    "\"state_off\":\"OFF\","
-    "\"availability_topic\":\"" + String(STATUS_TOPIC) + "\","
-    "\"payload_available\":\"online\","
-    "\"payload_not_available\":\"offline\","
-    "\"device\":{"
-      "\"identifiers\":[\"" + String(DEVICE_ID) + "\"],"
-      "\"name\":\"" + String(DEVICE_NAME) + "\","
-      "\"manufacturer\":\"DIY\","
-      "\"model\":\"ESP32 Garden\""
-    "}"
-  "}";
+  snprintf(topic, sizeof(topic), "%s/switch/%s_bed_%u_valve/config", DISCOVERY_PREFIX, DEVICE_ID, bedNumber);
+  snprintf(payload, sizeof(payload),
+           "{\"name\":\"Garden Bed %u Valve\","
+           "\"unique_id\":\"%s_bed_%u_valve\","
+           "\"command_topic\":\"%s\","
+           "\"state_topic\":\"%s\","
+           "\"payload_on\":\"ON\","
+           "\"payload_off\":\"OFF\","
+           "\"state_on\":\"ON\","
+           "\"state_off\":\"OFF\","
+           "\"availability_topic\":\"%s\","
+           "\"payload_available\":\"online\","
+           "\"payload_not_available\":\"offline\","
+           "\"device\":{"
+             "\"identifiers\":[\"%s\"],"
+             "\"name\":\"%s\","
+             "\"manufacturer\":\"DIY\","
+             "\"model\":\"ESP32 Garden\""
+           "}}",
+           bedNumber,
+           DEVICE_ID,
+           bedNumber,
+           valveSetTopics[bedIndex],
+           valveStateTopics[bedIndex],
+           STATUS_TOPIC,
+           DEVICE_ID,
+           DEVICE_NAME);
 
-  bool ok = mqtt.publish(topic.c_str(), payload.c_str(), true);
+  bool ok = mqtt.publish(topic, payload, true);
   if (!ok) {
     Serial.print("Valve discovery publish failed for bed ");
-    Serial.println(bed + 1);
+    Serial.println(bedNumber);
   }
 }
 
 void publishSensorDiscovery(int bed) {
-  if (!bedHasSensors(bed)) {
+  size_t bedIndex = static_cast<size_t>(bed);
+  if (!bedHasSensors(bedIndex)) {
     return;
   }
 
-  String topic = String(DISCOVERY_PREFIX) + "/sensor/garden_bed_" + String(bed + 1) + "_moisture/config";
+  unsigned int bedNumber = static_cast<unsigned int>(bedIndex + 1);
+  const Bed& bedDef = beds[bedIndex];
 
-  String payload =
-  "{"
-    "\"name\":\"Garden Bed " + String(bed + 1) + " Moisture\","
-    "\"unique_id\":\"garden_bed_" + String(bed + 1) + "_moisture\","
-    "\"state_topic\":\"garden/bed/" + String(bed + 1) + "/moisture\","
-    "\"unit_of_measurement\":\"ADC\","
-    "\"availability_topic\":\"" + String(STATUS_TOPIC) + "\","
-    "\"payload_available\":\"online\","
-    "\"payload_not_available\":\"offline\","
-    "\"device\":{"
-      "\"identifiers\":[\"" + String(DEVICE_ID) + "\"],"
-      "\"name\":\"" + String(DEVICE_NAME) + "\","
-      "\"manufacturer\":\"DIY\","
-      "\"model\":\"ESP32 Garden\""
-    "}"
-  "}";
+  for (int sensor = 0; sensor < bedDef.sensorCount; sensor++) {
+    unsigned int sensorNumber = static_cast<unsigned int>(sensor + 1);
+    char stateTopic[TOPIC_BUF_LEN] = {0};
+    char topic[TOPIC_BUF_LEN] = {0};
+    char payload[PAYLOAD_BUF_LEN] = {0};
 
-  bool ok = mqtt.publish(topic.c_str(), payload.c_str(), true);
-  if (!ok) {
-    Serial.print("Sensor discovery publish failed for bed ");
-    Serial.println(bed + 1);
+    buildSensorTopic(bedIndex, static_cast<size_t>(sensor), stateTopic, sizeof(stateTopic));
+    snprintf(topic, sizeof(topic), "%s/sensor/%s_bed_%u_sensor_%u_moisture/config", DISCOVERY_PREFIX, DEVICE_ID, bedNumber, sensorNumber);
+    snprintf(payload, sizeof(payload),
+             "{\"name\":\"Garden Bed %u Sensor %u Moisture\","
+             "\"unique_id\":\"%s_bed_%u_sensor_%u_moisture\","
+             "\"state_topic\":\"%s\","
+             "\"unit_of_measurement\":\"ADC\","
+             "\"availability_topic\":\"%s\","
+             "\"payload_available\":\"online\","
+             "\"payload_not_available\":\"offline\","
+             "\"device\":{"
+               "\"identifiers\":[\"%s\"],"
+               "\"name\":\"%s\","
+               "\"manufacturer\":\"DIY\","
+               "\"model\":\"ESP32 Garden\""
+             "}}",
+             bedNumber,
+             sensorNumber,
+             DEVICE_ID,
+             bedNumber,
+             sensorNumber,
+             stateTopic,
+             STATUS_TOPIC,
+             DEVICE_ID,
+             DEVICE_NAME);
+
+    bool ok = mqtt.publish(topic, payload, true);
+    if (!ok) {
+      Serial.print("Sensor discovery publish failed for bed ");
+      Serial.print(bedNumber);
+      Serial.print(" sensor ");
+      Serial.println(sensorNumber);
+    }
   }
 }
 
 void publishDiscovery() {
-  for (int i = 0; i < NUM_BEDS; i++) {
-    publishValveDiscovery(i);
-    publishSensorDiscovery(i);
+  for (size_t i = 0; i < NUM_BEDS; i++) {
+    publishValveDiscovery(static_cast<int>(i));
+    publishSensorDiscovery(static_cast<int>(i));
   }
 }
 
 void publishAllValveStates() {
-  for (int i = 0; i < NUM_BEDS; i++) {
-    String topic = String(BASE_TOPIC) + String(i + 1) + "/valve/state";
-    bool ok = mqtt.publish(topic.c_str(), valveStates[i] ? "ON" : "OFF", true);
+  for (size_t i = 0; i < NUM_BEDS; i++) {
+    bool ok = mqtt.publish(valveStateTopics[i], valveStates[i] ? "ON" : "OFF", true);
     if (!ok) {
       Serial.print("Failed to publish valve state for bed ");
-      Serial.println(i + 1);
+      Serial.println(static_cast<unsigned int>(i + 1));
     }
   }
 }
@@ -259,24 +286,27 @@ void publishBeds() {
     return;
   }
 
-  for (int i = 0; i < NUM_BEDS; i++) {
+  for (size_t i = 0; i < NUM_BEDS; i++) {
     if (!bedHasSensors(i)) {
       continue;
     }
 
-    int moisture = readBedMoisture(i);
-    if (moisture < 0) {
-      Serial.print("Skipping moisture publish for bed ");
-      Serial.print(i + 1);
-      Serial.println(" (no sensors configured)");
-      continue;
-    }
+    const Bed& bed = beds[i];
+    for (int sensor = 0; sensor < bed.sensorCount; sensor++) {
+      int moisture = readSensorPin(bed.sensors[sensor]);
 
-    String topic = String(BASE_TOPIC) + String(i + 1) + "/moisture";
-    bool ok = mqtt.publish(topic.c_str(), String(moisture).c_str(), true);
-    if (!ok) {
-      Serial.print("Moisture publish failed for bed ");
-      Serial.println(i + 1);
+      char topic[TOPIC_BUF_LEN] = {0};
+      char payload[16] = {0};
+      buildSensorTopic(i, static_cast<size_t>(sensor), topic, sizeof(topic));
+      snprintf(payload, sizeof(payload), "%d", moisture);
+
+      bool ok = mqtt.publish(topic, payload, true);
+      if (!ok) {
+        Serial.print("Moisture publish failed for bed ");
+        Serial.print(static_cast<unsigned int>(i + 1));
+        Serial.print(" sensor ");
+        Serial.println(sensor + 1);
+      }
     }
   }
 }
@@ -308,12 +338,11 @@ void ensureMQTTConnected() {
       Serial.println(mqtt.state());
     }
 
-    for (int i = 0; i < NUM_BEDS; i++) {
-      String topic = String(BASE_TOPIC) + String(i + 1) + "/valve/set";
-      bool subOk = mqtt.subscribe(topic.c_str());
+    for (size_t i = 0; i < NUM_BEDS; i++) {
+      bool subOk = mqtt.subscribe(valveSetTopics[i]);
       if (!subOk) {
         Serial.print("Subscribe failed for bed ");
-        Serial.print(i + 1);
+        Serial.print(static_cast<unsigned int>(i + 1));
         Serial.print(", mqtt rc=");
         Serial.println(mqtt.state());
       }
@@ -333,7 +362,9 @@ void setup() {
 
   analogSetAttenuation(ADC_11db);
 
-  for (int i = 0; i < NUM_BEDS; i++) {
+  buildTopics();
+
+  for (size_t i = 0; i < NUM_BEDS; i++) {
     pinMode(beds[i].valvePin, OUTPUT);
     digitalWrite(beds[i].valvePin, HIGH);
     valveStates[i] = false;
@@ -359,6 +390,7 @@ void loop() {
     wifiWasConnected = false;
     Serial.println("WiFi disconnected");
     if (mqtt.connected()) {
+      mqtt.publish(STATUS_TOPIC, "offline", true);
       mqtt.disconnect();
     }
   }
