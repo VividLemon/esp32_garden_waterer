@@ -4,10 +4,8 @@
 
 #if __has_include("secrets.h")
 #include "secrets.h"
-#elif __has_include("secrets.example.h")
-#include "secrets.example.h"
 #else
-#include "secrets.examples.h"
+#include "secrets.example.h"
 #endif
 
 struct Bed {
