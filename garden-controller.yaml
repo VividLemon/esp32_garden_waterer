@@ -7,8 +7,8 @@
 #   Bed 4: valve GPIO19, moisture sensor GPIO32
 #   Valve relays are active-LOW. Sensors are on ADC1 (safe to use with Wi-Fi).
 #
-# Each bed is stamped out from garden-bed.yaml. To add a bed, add another
-# package entry.
+# Each bed has a valve switch, a failsafe script and a moisture sensor.
+# To add a bed, copy one bed's three entries and change the number and pins.
 #
 # Talks to Home Assistant over ESPHome's native API.
 
@@ -46,16 +46,146 @@ wifi:
 
 captive_portal:
 
-packages:
-  bed1: !include
-    file: garden-bed.yaml
-    vars: { bed: "1", valve_pin: GPIO23, sensor_pin: GPIO36 }
-  bed2: !include
-    file: garden-bed.yaml
-    vars: { bed: "2", valve_pin: GPIO22, sensor_pin: GPIO34 }
-  bed3: !include
-    file: garden-bed.yaml
-    vars: { bed: "3", valve_pin: GPIO21, sensor_pin: GPIO35 }
-  bed4: !include
-    file: garden-bed.yaml
-    vars: { bed: "4", valve_pin: GPIO19, sensor_pin: GPIO32 }
+# --- Valves -------------------------------------------------------------------
+# Relays are active-LOW (inverted), and never come back on by themselves
+# after a reboot (ALWAYS_OFF). Turning a valve on starts its failsafe timer.
+switch:
+  - platform: gpio
+    id: bed1_valve
+    name: "Garden Bed 1 Valve"
+    icon: mdi:water
+    pin:
+      number: GPIO23
+      inverted: true
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - script.execute: bed1_failsafe
+    on_turn_off:
+      - script.stop: bed1_failsafe
+
+  - platform: gpio
+    id: bed2_valve
+    name: "Garden Bed 2 Valve"
+    icon: mdi:water
+    pin:
+      number: GPIO22
+      inverted: true
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - script.execute: bed2_failsafe
+    on_turn_off:
+      - script.stop: bed2_failsafe
+
+  - platform: gpio
+    id: bed3_valve
+    name: "Garden Bed 3 Valve"
+    icon: mdi:water
+    pin:
+      number: GPIO21
+      inverted: true
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - script.execute: bed3_failsafe
+    on_turn_off:
+      - script.stop: bed3_failsafe
+
+  - platform: gpio
+    id: bed4_valve
+    name: "Garden Bed 4 Valve"
+    icon: mdi:water
+    pin:
+      number: GPIO19
+      inverted: true
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - script.execute: bed4_failsafe
+    on_turn_off:
+      - script.stop: bed4_failsafe
+
+# --- Failsafes ----------------------------------------------------------------
+script:
+  - id: bed1_failsafe
+    mode: restart
+    then:
+      - delay: ${max_valve_run}
+      - logger.log: "Bed 1 valve hit max run time, turning off"
+      - switch.turn_off: bed1_valve
+
+  - id: bed2_failsafe
+    mode: restart
+    then:
+      - delay: ${max_valve_run}
+      - logger.log: "Bed 2 valve hit max run time, turning off"
+      - switch.turn_off: bed2_valve
+
+  - id: bed3_failsafe
+    mode: restart
+    then:
+      - delay: ${max_valve_run}
+      - logger.log: "Bed 3 valve hit max run time, turning off"
+      - switch.turn_off: bed3_valve
+
+  - id: bed4_failsafe
+    mode: restart
+    then:
+      - delay: ${max_valve_run}
+      - logger.log: "Bed 4 valve hit max run time, turning off"
+      - switch.turn_off: bed4_valve
+
+# --- Moisture sensors ---------------------------------------------------------
+# Raw ADC counts (0-4095), averaged over 10 samples, every 10 s.
+# To report % instead, take readings with the probe dry and in water, then add:
+#   unit_of_measurement: "%"
+#   filters:
+#     - calibrate_linear:
+#         - 3000 -> 0     # dry reading
+#         - 1300 -> 100   # wet reading
+#     - clamp: { min_value: 0, max_value: 100 }
+sensor:
+  - platform: adc
+    id: bed1_moisture
+    name: "Garden Bed 1 Sensor 1 Moisture"
+    pin: GPIO36
+    attenuation: 12db
+    raw: true
+    samples: 10
+    update_interval: 10s
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: mdi:water-percent
+
+  - platform: adc
+    id: bed2_moisture
+    name: "Garden Bed 2 Sensor 1 Moisture"
+    pin: GPIO34
+    attenuation: 12db
+    raw: true
+    samples: 10
+    update_interval: 10s
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: mdi:water-percent
+
+  - platform: adc
+    id: bed3_moisture
+    name: "Garden Bed 3 Sensor 1 Moisture"
+    pin: GPIO35
+    attenuation: 12db
+    raw: true
+    samples: 10
+    update_interval: 10s
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: mdi:water-percent
+
+  - platform: adc
+    id: bed4_moisture
+    name: "Garden Bed 4 Sensor 1 Moisture"
+    pin: GPIO32
+    attenuation: 12db
+    raw: true
+    samples: 10
+    update_interval: 10s
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: mdi:water-percent

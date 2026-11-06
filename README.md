@@ -4,12 +4,11 @@ Controls the water valves for four garden beds and reports each bed's soil moist
 
 ## Use the YAML
 
-If you come across this, use **`garden-controller.yaml`** (with `garden-bed.yaml`).
+If you come across this, use **`garden-controller.yaml`**.
 
 1. In Home Assistant, open **ESPHome Device Builder** and create a new device (board: **Generic ESP32 Board**).
 2. Replace its config with the contents of `garden-controller.yaml`.
-3. Put `garden-bed.yaml` next to it in the Builder's config folder (it's included once per bed).
-4. In the Builder's **Secrets** editor, add:
+3. In the Builder's **Secrets** editor, add:
 
    ```yaml
    wifi_ssid: "YourNetwork"
@@ -17,7 +16,7 @@ If you come across this, use **`garden-controller.yaml`** (with `garden-bed.yaml
    garden_controller__encryption_key: "REPLACE_WITH_32_BYTE_BASE64_KEY" # openssl rand -base64 32
    ```
 
-5. **Install**. The first flash is over USB; updates after that go over Wi-Fi.
+4. **Install**. The first flash is over USB; updates after that go over Wi-Fi.
 
 Wiring (valve relays are active-LOW):
 
