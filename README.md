@@ -1,51 +1,33 @@
 # ESP32 Garden Waterer
 
-An ESP32 that controls the water valves for four garden beds and reports soil moisture for each one to Home Assistant.
+Controls the water valves for four garden beds and reports each bed's soil moisture to Home Assistant. A valve left on for more than 30 minutes turns itself off.
 
-| Bed | Valve relay | Moisture sensor |
+## Use the YAML
+
+If you come across this, use **`garden-controller.yaml`** (with `garden-bed.yaml`).
+
+1. In Home Assistant, open **ESPHome Device Builder** and create a new device (board: **Generic ESP32 Board**).
+2. Replace its config with the contents of `garden-controller.yaml`.
+3. Put `garden-bed.yaml` next to it in the Builder's config folder (it's included once per bed).
+4. In the Builder's **Secrets** editor, add:
+
+   ```yaml
+   wifi_ssid: "YourNetwork"
+   wifi_password: "YourWifiPassword"
+   garden_controller__encryption_key: "REPLACE_WITH_32_BYTE_BASE64_KEY" # openssl rand -base64 32
+   ```
+
+5. **Install**. The first flash is over USB; updates after that go over Wi-Fi.
+
+Wiring (valve relays are active-LOW):
+
+| Bed | Valve | Moisture sensor |
 | --- | --- | --- |
 | 1 | `GPIO23` | `GPIO36` |
 | 2 | `GPIO22` | `GPIO34` |
 | 3 | `GPIO21` | `GPIO35` |
 | 4 | `GPIO19` | `GPIO32` |
 
-Valve relays are active-LOW. Moisture is read as raw ADC counts (0–4095) every 10 seconds.
+## Other files
 
-## Versions
-
-I started with the C++ Arduino sketch, then wrote ESPHome and MicroPython versions to see what they'd be like. All three do the same job:
-
-| Version | Files | Talks to Home Assistant via |
-| --- | --- | --- |
-| C++ (Arduino) | `esp32_garden_waterer.ino`, `secrets.example.h` | MQTT + discovery |
-| ESPHome | `garden-controller.yaml`, `garden-bed.yaml` | Native API |
-| MicroPython | `main.py`, `secrets.example.py` | MQTT + discovery |
-
-The ESPHome and MicroPython versions also add a failsafe: a valve left on for more than 30 minutes turns itself off, even if Home Assistant or Wi-Fi is down.
-
-> **If this is ever used again, use the ESPHome version.** It's the least code, adds a bed with a single `packages:` entry, gets OTA updates and a fallback hotspot for free, and doesn't need reconnect or discovery logic maintained by hand.
-
-## Example setup (ESPHome)
-
-Copy `secrets.yaml.example` to `secrets.yaml` next to `garden-controller.yaml` and fill it in:
-
-```yaml
-wifi_ssid: "YourNetwork"
-wifi_password: "YourWifiPassword"
-
-# Generate with: openssl rand -base64 32   (or let the ESPHome dashboard create one)
-garden_controller__encryption_key: "REPLACE_WITH_32_BYTE_BASE64_KEY"
-```
-
-Then flash it over USB (later updates can go over Wi-Fi):
-
-```bash
-esphome run garden-controller.yaml
-```
-
-Home Assistant should discover the device automatically; add it with the same `garden_controller__encryption_key`.
-
-### Other versions
-
-- **C++:** copy `secrets.example.h` to `secrets.h`, fill it in, and build with the Arduino IDE or `arduino-cli` (ESP32 core + `PubSubClient`).
-- **MicroPython:** copy `secrets.example.py` to `secrets.py`, fill it in, and upload both files with `mpremote cp main.py secrets.py :`.
+`esp32_garden_waterer.ino` (C++) and `main.py` (MicroPython) are earlier experiments that do the same thing over MQTT. I started with C++, then tried ESPHome and Python to compare.
