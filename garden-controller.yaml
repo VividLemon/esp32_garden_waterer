@@ -42,7 +42,7 @@ wifi:
   password: !secret wifi_password
   # If Wi-Fi is unreachable, the device starts its own hotspot so you can fix it
   ap:
-    ssid: ${friendly_name} Fallback Hotspot
+    ssid: ${friendly_name} Fallback
 
 captive_portal:
 
