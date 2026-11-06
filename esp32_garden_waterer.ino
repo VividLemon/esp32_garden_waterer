@@ -14,16 +14,16 @@ struct Bed {
   size_t sensorCount;
 };
 
-constexpr int bed1Sensors[] = {36};
-constexpr int bed2Sensors[] = {34};
-constexpr int bed3Sensors[] = {35};
-constexpr int bed4Sensors[] = {32};
+constexpr int bed1Sensors[] = {36,34};
+constexpr int bed2Sensors[] = {35,32};
+constexpr int bed3Sensors[] = {25,26};
+constexpr int bed4Sensors[] = {27,14};
 
 Bed beds[] = {
-  {23, bed1Sensors, 1},
-  {22, bed2Sensors, 1},
-  {21, bed3Sensors, 1},
-  {19, bed4Sensors, 1}
+  {23, bed1Sensors, 2},
+  {22, bed2Sensors, 2},
+  {21, bed3Sensors, 2},
+  {19, bed4Sensors, 2}
 };
 
 constexpr size_t NUM_BEDS = sizeof(beds) / sizeof(beds[0]);

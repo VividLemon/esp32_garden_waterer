@@ -1,4 +1,7 @@
 secrets.h
+secrets.py
+secrets.yaml
+.esphome/
 
 app/bin/
 app/pde.jar

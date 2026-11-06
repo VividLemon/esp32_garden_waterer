@@ -1,0 +1,45 @@
+# One garden bed: a valve and a moisture sensor.
+# Included from garden-controller.yaml with vars: bed, valve_pin, sensor_pin.
+
+switch:
+  - platform: gpio
+    id: bed${bed}_valve
+    name: "Garden Bed ${bed} Valve"
+    icon: mdi:water
+    pin:
+      number: ${valve_pin}
+      inverted: true            # relay is active-LOW
+    restore_mode: ALWAYS_OFF    # never come back on by itself after a reboot
+    on_turn_on:
+      - script.execute: bed${bed}_failsafe
+    on_turn_off:
+      - script.stop: bed${bed}_failsafe
+
+script:
+  - id: bed${bed}_failsafe
+    mode: restart
+    then:
+      - delay: ${max_valve_run}
+      - logger.log: "Bed ${bed} valve hit max run time, turning off"
+      - switch.turn_off: bed${bed}_valve
+
+sensor:
+  - platform: adc
+    id: bed${bed}_moisture
+    name: "Garden Bed ${bed} Sensor 1 Moisture"
+    pin: ${sensor_pin}
+    attenuation: 12db           # same as ADC_11db (older ESPHome: "11db")
+    raw: true                   # 0-4095 counts, like analogRead()
+    samples: 10                 # average 10 readings, like readSensorPin()
+    update_interval: 10s        # SENSOR_PUBLISH_MS
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: mdi:water-percent
+    # To report % instead of raw counts, take readings with the probe
+    # dry and in water, then use something like:
+    # unit_of_measurement: "%"
+    # filters:
+    #   - calibrate_linear:
+    #       - 3000 -> 0     # dry reading
+    #       - 1300 -> 100   # wet reading
+    #   - clamp: { min_value: 0, max_value: 100 }
