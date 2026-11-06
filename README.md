@@ -18,7 +18,7 @@ I started with the C++ Arduino sketch, then wrote ESPHome and MicroPython versio
 | Version | Files | Talks to Home Assistant via |
 | --- | --- | --- |
 | C++ (Arduino) | `esp32_garden_waterer.ino`, `secrets.example.h` | MQTT + discovery |
-| ESPHome | `garden-controller.yaml`, `garden-bed.yaml` | Native API (MQTT optional) |
+| ESPHome | `garden-controller.yaml`, `garden-bed.yaml` | Native API |
 | MicroPython | `main.py`, `secrets.example.py` | MQTT + discovery |
 
 The ESPHome and MicroPython versions also add a failsafe: a valve left on for more than 30 minutes turns itself off, even if Home Assistant or Wi-Fi is down.
@@ -32,16 +32,9 @@ Copy `secrets.yaml.example` to `secrets.yaml` next to `garden-controller.yaml` a
 ```yaml
 wifi_ssid: "YourNetwork"
 wifi_password: "YourWifiPassword"
-fallback_ap_password: "change-me-123"
 
 # Generate with: openssl rand -base64 32   (or let the ESPHome dashboard create one)
-api_encryption_key: "REPLACE_WITH_32_BYTE_BASE64_KEY"
-ota_password: "change-me"
-
-# Only needed if you enable the mqtt: block
-mqtt_broker: "192.168.1.10"
-mqtt_username: ""
-mqtt_password: ""
+garden_controller__encryption_key: "REPLACE_WITH_32_BYTE_BASE64_KEY"
 ```
 
 Then flash it over USB (later updates can go over Wi-Fi):
@@ -50,7 +43,7 @@ Then flash it over USB (later updates can go over Wi-Fi):
 esphome run garden-controller.yaml
 ```
 
-Home Assistant should discover the device automatically; add it with the same `api_encryption_key`.
+Home Assistant should discover the device automatically; add it with the same `garden_controller__encryption_key`.
 
 ### Other versions
 

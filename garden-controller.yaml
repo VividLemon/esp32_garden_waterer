@@ -1,21 +1,22 @@
-# ESPHome port of the ESP32 garden controller.
+# ESPHome version of the ESP32 garden controller.
 #
-# Hardware (same as the Arduino sketch):
+# Hardware:
 #   Bed 1: valve GPIO23, moisture sensor GPIO36
 #   Bed 2: valve GPIO22, moisture sensor GPIO34
 #   Bed 3: valve GPIO21, moisture sensor GPIO35
 #   Bed 4: valve GPIO19, moisture sensor GPIO32
 #   Valve relays are active-LOW. Sensors are on ADC1 (safe to use with Wi-Fi).
 #
-# Each bed is stamped out from garden-bed.yaml, the same idea as the
-# Bed beds[] array in the sketch. To add a bed, add another package entry.
+# Each bed is stamped out from garden-bed.yaml. To add a bed, add another
+# package entry.
+#
+# Talks to Home Assistant over ESPHome's native API.
 
 substitutions:
   name: garden-controller
   friendly_name: Garden Controller
-  # Failsafe (not in the original sketch): any valve left on longer than
-  # this shuts itself off, even if Home Assistant or Wi-Fi is down.
-  # Set it longer than your longest watering run.
+  # Failsafe: any valve left on longer than this shuts itself off, even if
+  # Home Assistant or Wi-Fi is down. Set it longer than your longest watering run.
   max_valve_run: 30min
 
 esphome:
@@ -31,18 +32,17 @@ logger:
 
 api:
   encryption:
-    key: !secret api_encryption_key
+    key: !secret garden_controller__encryption_key
 
 ota:
   - platform: esphome
-    password: !secret ota_password
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  # If Wi-Fi is unreachable, the device starts its own hotspot so you can fix it
   ap:
-    ssid: "Garden Controller Fallback"
-    password: !secret fallback_ap_password
+    ssid: ${friendly_name} Fallback Hotspot
 
 captive_portal:
 
@@ -59,16 +59,3 @@ packages:
   bed4: !include
     file: garden-bed.yaml
     vars: { bed: "4", valve_pin: GPIO19, sensor_pin: GPIO32 }
-
-# --- Optional: keep MQTT instead of (or alongside) the native API -----------
-# ESPHome then handles HA discovery and online/offline status itself.
-# Topics follow ESPHome's layout (<topic_prefix>/switch/..., /sensor/...),
-# not garden/bed/N/valve/set, so update anything else that used the old ones.
-#
-# mqtt:
-#   broker: !secret mqtt_broker
-#   port: 1883
-#   username: !secret mqtt_username
-#   password: !secret mqtt_password
-#   topic_prefix: garden-controller
-#   discovery: true
